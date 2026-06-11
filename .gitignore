@@ -1,0 +1,10 @@
+__pycache__
+
+config/active.yaml
+logs/*.json
+logs/*.jsonl
+logs/*.log
+logs/*.raw*
+!logs/.gitkeep
+
+.env*

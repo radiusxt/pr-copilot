@@ -1,0 +1,25 @@
+# Copy to config/active.yaml and edit for your PR.
+# cp config/example.yaml config/active.yaml
+
+repo: owner/repo          # GitHub org/user and repository name
+pr: 0                     # Pull request number to babysit
+base_branch: main         # Branch the PR targets
+
+guardrails:
+  # Limits what the agent is allowed to change autonomously.
+  max_files_per_fix: 5
+  allow_ci_workflow_changes: false   # Never edit .github/workflows to "make green"
+  allow_unrelated_changes: false     # Fixes must stay in PR scope
+  auto_push: false                   # Require explicit approval before git push
+  auto_merge: false                  # Never merge without human sign-off
+
+loop:
+  # Used by scripts/run-loop.sh and scripts/pr-watch.sh
+  mode: dynamic           # dynamic | fixed
+  interval: 5m            # Fallback heartbeat for dynamic mode; cadence for fixed
+  ci_poll_seconds: 30     # How often pr-watch.sh checks for CI changes
+
+notifications:
+  # Future: wire to Slack, email, etc.
+  on_blocked: true        # Escalate when human judgment is required
+  on_merge_ready: true    # Notify when PR becomes merge-ready

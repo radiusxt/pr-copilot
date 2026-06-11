@@ -1,0 +1,79 @@
+# Optional CI entry point: posts a merge-readiness snapshot on PR events.
+# Copy or adapt this into the target application repo to learn GitHub Actions.
+name: PR status report
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  check_suite:
+    types: [completed]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout babysit scripts
+        uses: actions/checkout@v4
+
+      - name: Install GitHub CLI
+        run: |
+          type -p curl >/dev/null || sudo apt install curl -y
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update
+          sudo apt install gh -y
+
+      - name: Write active config from workflow context
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.check_suite.pull_requests[0].number }}
+        run: |
+          cat > config/active.yaml <<EOF
+          repo: ${{ github.repository }}
+          pr: ${PR_NUMBER}
+          base_branch: ${{ github.event.pull_request.base.ref || 'main' }}
+          guardrails:
+            max_files_per_fix: 5
+            allow_ci_workflow_changes: false
+            allow_unrelated_changes: false
+            auto_push: false
+            auto_merge: false
+          loop:
+            mode: dynamic
+            interval: 5m
+            ci_poll_seconds: 30
+          notifications:
+            on_blocked: true
+            on_merge_ready: true
+          EOF
+
+      - name: Collect PR status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          chmod +x scripts/*.sh
+          ./scripts/pr-status.sh
+
+      - name: Comment merge-readiness summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.check_suite.pull_requests[0].number }}
+        run: |
+          READY=$(python3 -c "import json; print('yes' if json.load(open('logs/latest-status.json'))['merge_ready'] else 'no')")
+          BLOCKED=$(python3 -c "import json; print(', '.join(json.load(open('logs/latest-status.json'))['blocked_reasons']) or 'none')")
+          FAILING=$(python3 -c "import json; d=json.load(open('logs/latest-status.json')); print(len(d['ci']['failing']))")
+          gh pr comment "$PR_NUMBER" --body "$(cat <<EOF
+          ## PR babysit status
+
+          | Field | Value |
+          |---|---|
+          | Merge ready | **${READY}** |
+          | Blocked reasons | ${BLOCKED} |
+          | Failing checks | ${FAILING} |
+
+          _Automated snapshot from agentic-loop. Agent fixes still run locally or via Cursor._
+          EOF
+          )"
