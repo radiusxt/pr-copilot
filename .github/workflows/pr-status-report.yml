@@ -16,8 +16,16 @@ jobs:
   report:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout babysit scripts
+      - name: Checkout monitor
         uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
       - name: Install GitHub CLI
         run: |
@@ -53,9 +61,7 @@ jobs:
       - name: Collect PR status
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          chmod +x scripts/*.sh
-          ./scripts/pr-status.sh
+        run: python simple_ui.py status
 
       - name: Comment merge-readiness summary
         env:
@@ -66,7 +72,7 @@ jobs:
           BLOCKED=$(python3 -c "import json; print(', '.join(json.load(open('logs/latest-status.json'))['blocked_reasons']) or 'none')")
           FAILING=$(python3 -c "import json; d=json.load(open('logs/latest-status.json')); print(len(d['ci']['failing']))")
           gh pr comment "$PR_NUMBER" --body "$(cat <<EOF
-          ## PR babysit status
+          ## PR monitor status
 
           | Field | Value |
           |---|---|

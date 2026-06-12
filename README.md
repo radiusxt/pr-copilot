@@ -1,10 +1,8 @@
-# Agentic Loop — PR Merge Babysitter
+# PR Merge Agentic Loop
 
-A minimal, iterable system for keeping a pull request merge-ready: green CI, resolved review threads, and no merge conflicts.
+A minimal, iterable system for keeping a pull request merge-ready: green CI, resolved review threads and no merge conflicts for delivering better software faster. 
 
-**Python (recommended):** `agent.py` orchestrates the loop, `tools.py` defines capabilities, `clients.py` talks to GitHub/Anthropic/Docker, and `simple_ui.py` is the CLI.
-
-**Bash (optional):** thin `scripts/` wrappers for Cursor `/loop` integration without the Anthropic API.
+**Python:** `agent.py` orchestrates the loop, `tools.py` defines capabilities, `clients.py` talks to GitHub/Anthropic/Docker, and `simple_ui.py` is the CLI.
 
 ## Quick start (Python)
 
@@ -29,13 +27,13 @@ cp config/example.yaml config/active.yaml
 pip install -r requirements.txt
 ```
 
-### 3. Snapshot PR health (no LLM)
+### 3. Snapshot PR health
 
 ```bash
 python simple_ui.py status
 ```
 
-### 4. Run one babysit iteration
+### 4. Run one monitor iteration
 
 ```bash
 # With Anthropic tool-use loop
@@ -66,17 +64,6 @@ Commands: `status`, `once`, `loop fixed`, `loop dynamic`, `quit`
 
 ---
 
-## Quick start (Bash + Cursor)
-
-```bash
-chmod +x scripts/*.sh
-./scripts/run-once.sh
-```
-
-Then in Cursor: **"Follow prompts/babysit.md for this PR."** or `/loop 5m follow prompts/babysit.md`.
-
----
-
 ## Architecture
 
 ```mermaid
@@ -100,7 +87,7 @@ flowchart LR
 | -------------- | ---------------------------------------------------------------------------- |
 | `agent.py`     | `Agent` class — state, observe → reason → act loop, fixed/dynamic scheduling |
 | `tools.py`     | `Tool` base class + PR status, comments, shell, file write, docker exec      |
-| `clients.py`   | `GitHubClient`, `AnthropicClient`, `DockerClient`, `BabysitConfig` loader    |
+| `clients.py`   | `GitHubClient`, `AnthropicClient`, `DockerClient`, `MonitorConfig` loader    |
 | `simple_ui.py` | CLI: `status`, `once`, `loop`, `repl`                                        |
 
 
@@ -115,7 +102,7 @@ Template configuration. Copy to `config/active.yaml` (gitignored) for your PR.
 
 | Section                     | Purpose                                                                |
 | --------------------------- | ---------------------------------------------------------------------- |
-| `repo`, `pr`, `base_branch` | Which PR to babysit                                                    |
+| `repo`, `pr`, `base_branch` | Which PR to monitor                                                    |
 | `guardrails`                | Bounds agent autonomy (max files, no workflow edits, push/merge gates) |
 | `loop`                      | Interval and poll settings for loop scripts                            |
 | `notifications`             | Hooks for future Slack/email alerts                                    |
@@ -125,60 +112,7 @@ Template configuration. Copy to `config/active.yaml` (gitignored) for your PR.
 
 ---
 
-### `scripts/lib.sh`
-
-Shared bash helpers: config loading, `gh` auth checks, interval parsing, `gh pr view` JSON fetch.
-
-**Achieves:** DRY foundation so every script reads the same config and fails fast if `gh` is missing.
-
----
-
-### `scripts/pr-status.sh`
-
-Pulls PR metadata via `gh` and writes `logs/latest-status.json` with:
-
-- mergeable / merge state (conflicts, behind base)
-- CI check rollup (failing, pending, all green)
-- review decision
-- computed `merge_ready` flag and `blocked_reasons`
-
-**Achieves:** Objective snapshot the agent uses to decide *what* to fix next.
-
----
-
-### `scripts/pr-comments.sh`
-
-Fetches unresolved review threads via GitHub GraphQL and writes `logs/latest-comments.json`.
-
-**Achieves:** Comment triage input without dumping full raw API payloads into the agent context.
-
----
-
-### `scripts/run-once.sh`
-
-Orchestrates one iteration: runs status + comments scripts, detects merge-ready, prints the agent prompt and context file paths.
-
-**Achieves:** Single entry point for manual runs and loop ticks.
-
----
-
-### `scripts/run-loop.sh`
-
-Fixed-interval loop per the Cursor loop skill: runs `run-once.sh` immediately, then emits `AGENT_LOOP_TICK_PR_BABYSIT` on each interval.
-
-**Achieves:** Time-based babysitting when you want regular check-ins regardless of GitHub webhooks.
-
----
-
-### `scripts/pr-watch.sh`
-
-Polls PR fingerprint (merge state + CI counts + review decision). Emits `AGENT_LOOP_WAKE_PR_BABYSIT` only when something changes.
-
-**Achieves:** Event-ish pacing — fewer wasted agent runs while CI is still running.
-
----
-
-### `prompts/babysit.md`
+### `prompts/monitor.md`
 
 The agent instruction set for one iteration: priority order (conflicts → CI → comments), guardrails, stop conditions, output format.
 
@@ -186,9 +120,9 @@ The agent instruction set for one iteration: priority order (conflicts → CI �
 
 ---
 
-### `.cursor/rules/pr-babysit.mdc`
+### `.cursor/rules/pr.mdc`
 
-Cursor rule that wires the repo together: when to run scripts, which prompt to follow, loop modes, production discipline.
+Cursor rule that wires the repo together: when to run the monitor, which prompt to follow, loop modes, production discipline.
 
 **Achieves:** Persistent context so you don't re-explain the workflow every chat.
 
@@ -204,7 +138,7 @@ Runtime artifacts (`latest-status.json`, `latest-comments.json`, `last-run.log`)
 
 ### `.github/workflows/pr-status-report.yml`
 
-Optional GitHub Action: on PR/check events, runs `pr-status.sh` and comments a merge-readiness table on the PR.
+Optional GitHub Action: on PR/check events, runs `python simple_ui.py status` and comments a merge-readiness table on the PR.
 
 **Achieves:** CI/CD learning path — observability in GitHub without giving the Action permission to push code fixes. Copy into your app repo when ready.
 
@@ -227,16 +161,16 @@ Optional GitHub Action: on PR/check events, runs `pr-status.sh` and comments a m
 ## Cursor usage examples
 
 ```
-./scripts/run-once.sh
-Follow prompts/babysit.md. Fix in-scope CI failures on PR #42.
+python simple_ui.py status
+Follow prompts/monitor.md. Fix in-scope CI failures on PR #42.
 ```
 
 ```
-/loop 5m Run ./scripts/run-once.sh and follow prompts/babysit.md
+/loop 5m Run python simple_ui.py once and follow prompts/monitor.md
 ```
 
 ```
-Babysit PR until merge-ready. Stop if changes would touch workflows.
+Monitor PR until merge-ready. Stop if changes would touch workflows.
 ```
 
 ---

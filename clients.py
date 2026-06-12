@@ -1,4 +1,4 @@
-"""External service clients for the PR babysit agent."""
+"""External service clients for the PR merge monitor agent."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ LOGS_DIR = ROOT_DIR / "logs"
 
 
 @dataclass
-class BabysitConfig:
+class MonitorConfig:
     repo: str
     pr: int
     base_branch: str
@@ -26,7 +26,7 @@ class BabysitConfig:
     notifications: dict[str, Any]
 
     @classmethod
-    def load(cls, path: Path | None = None) -> BabysitConfig:
+    def load(cls, path: Path | None = None) -> MonitorConfig:
         config_path = path or DEFAULT_CONFIG
         if not config_path.exists():
             raise FileNotFoundError(
@@ -52,7 +52,7 @@ class BabysitConfig:
 class GitHubClient:
     """Wraps the GitHub CLI (gh) for PR status and review data."""
 
-    def __init__(self, config: BabysitConfig) -> None:
+    def __init__(self, config: MonitorConfig) -> None:
         self.config = config
         self._ensure_gh()
 

@@ -2,7 +2,7 @@
 # cp config/example.yaml config/active.yaml
 
 repo: owner/repo          # GitHub org/user and repository name
-pr: 0                     # Pull request number to babysit
+pr: 0                     # Pull request number to monitor
 base_branch: main         # Branch the PR targets
 
 guardrails:

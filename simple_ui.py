@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Terminal UI for the PR babysit agent."""
+"""Terminal UI for the PR merge monitor agent."""
 
 from __future__ import annotations
 
@@ -9,11 +9,11 @@ import sys
 from pathlib import Path
 
 from agent import Agent
-from clients import BabysitConfig, ROOT_DIR, ensure_logs_dir
+from clients import MonitorConfig, ROOT_DIR, ensure_logs_dir
 
 
-def _load_config(args: argparse.Namespace) -> BabysitConfig:
-    return BabysitConfig.load(args.config)
+def _load_config(args: argparse.Namespace) -> MonitorConfig:
+    return MonitorConfig.load(args.config)
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -58,10 +58,10 @@ def cmd_repl(args: argparse.Namespace) -> int:
         use_docker=args.docker,
     )
 
-    print("PR babysit REPL. Commands: status | once | loop | quit")
+    print("PR monitor REPL. Commands: status | once | loop | quit")
     while True:
         try:
-            line = input("babysit> ").strip()
+            line = input("monitor> ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             break
@@ -87,7 +87,7 @@ def cmd_repl(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="PR merge babysit agent")
+    parser = argparse.ArgumentParser(description="PR merge monitor agent")
     parser.add_argument(
         "--config",
         type=Path,
@@ -116,7 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("status", help="Fetch PR status and comments once")
 
-    once = sub.add_parser("once", help="Run one babysit iteration")
+    once = sub.add_parser("once", help="Run one monitor iteration")
     once.set_defaults(func=cmd_once)
 
     loop = sub.add_parser("loop", help="Run until merge-ready or blocked")

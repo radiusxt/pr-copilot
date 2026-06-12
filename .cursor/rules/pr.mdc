@@ -1,0 +1,25 @@
+---
+description: Keep configured PR merge-ready via CI and review triage.
+alwaysApply: false
+---
+# PR Monitor agent
+
+When the user asks to monitor a PR, run the loop, or fix CI/review on a PR:
+
+1. Ensure `config/active.yaml` exists (copy from `config/example.yaml` if needed).
+2. Run `python simple_ui.py status` to refresh `logs/latest-status.json` and `logs/latest-comments.json`.
+3. Follow `prompts/monitor.md` for the iteration.
+
+## Loop modes
+
+- **Fixed:** `python simple_ui.py loop --mode fixed` — ticks every `loop.interval` in config
+- **Dynamic:** `python simple_ui.py loop --mode dynamic` — polls until CI/merge state changes
+
+Resolve merge conflicts intelligently, triage comments and fix in-scope CI only.
+
+## Production discipline
+
+- Prefer small, concise, scoped commits
+- Never weaken CI to pass
+- Escalate when `blocked_reasons` include issues outside PR scope
+- Log decisions in `logs/agent-history.jsonl`

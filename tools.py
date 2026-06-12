@@ -1,4 +1,4 @@
-"""Tools the PR babysit agent can invoke."""
+"""Tools the PR merge monitor agent can invoke."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, ClassVar
 
-from clients import BabysitConfig, DockerClient, GitHubClient, ensure_logs_dir
+from clients import MonitorConfig, DockerClient, GitHubClient, ensure_logs_dir
 
 
 @dataclass
@@ -40,7 +40,7 @@ class Tool(ABC):
         }
 
 
-def _blocked_workflow_change(path: str, config: BabysitConfig) -> bool:
+def _blocked_workflow_change(path: str, config: MonitorConfig) -> bool:
     if config.guardrails.get("allow_ci_workflow_changes"):
         return False
     normalized = path.replace("\\", "/")
@@ -51,7 +51,7 @@ class PRStatusTool(Tool):
     name = "get_pr_status"
     description = "Fetch CI, merge state, and merge-readiness for the configured PR."
 
-    def __init__(self, github: GitHubClient, config: BabysitConfig) -> None:
+    def __init__(self, github: GitHubClient, config: MonitorConfig) -> None:
         self.github = github
         self.config = config
 
@@ -156,7 +156,7 @@ class ShellCommandTool(Tool):
         "Blocked for .github/workflows unless explicitly allowed in config."
     )
 
-    def __init__(self, config: BabysitConfig, cwd: Path | None = None) -> None:
+    def __init__(self, config: MonitorConfig, cwd: Path | None = None) -> None:
         self.config = config
         self.cwd = cwd or Path.cwd()
 
@@ -195,7 +195,7 @@ class WriteFileTool(Tool):
     name = "write_file"
     description = "Create or update a file in the target repo with the given content."
 
-    def __init__(self, config: BabysitConfig, cwd: Path | None = None) -> None:
+    def __init__(self, config: MonitorConfig, cwd: Path | None = None) -> None:
         self.config = config
         self.cwd = cwd or Path.cwd()
 
@@ -245,7 +245,7 @@ class DockerExecTool(Tool):
 
 
 def build_tool_registry(
-    config: BabysitConfig,
+    config: MonitorConfig,
     *,
     cwd: Path | None = None,
     use_docker: bool = False,

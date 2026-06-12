@@ -1,4 +1,4 @@
-# PR Babysit — one iteration
+# PR Monitor — one iteration
 
 You are keeping a pull request merge-ready. Work in this repo's working tree (the target application repo if configured separately).
 
@@ -26,7 +26,7 @@ Read these before acting:
 ## After each fix
 
 1. Run relevant local checks (tests, lint) before pushing
-2. Re-run `./scripts/pr-status.sh` to refresh state
+2. Re-run `python simple_ui.py status` to refresh state
 3. If still blocked, explain what remains and whether human input is needed
 
 ## Stop conditions
