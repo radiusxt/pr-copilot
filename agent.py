@@ -4,70 +4,27 @@ from __future__ import annotations
 
 import json
 import time
+from clients import AnthropicClient, MonitorConfig, ROOT_DIR, ensure_logs_dir
 from dataclasses import dataclass, field
 from pathlib import Path
+from tools import Tool, ToolResult, build_tool_registry
 from typing import Any
 
-from clients import AnthropicClient, MonitorConfig, ROOT_DIR, ensure_logs_dir
-from tools import Tool, ToolResult, build_tool_registry
- 
 # Markdown filepath containing the system prompt fed to the LLM on every completion request.
 # If the file is absent, the agent falls back to a hardcoded one-liner so the loop can still run without the prompts directory.
 SYSTEM_PROMPT_PATH = ROOT_DIR / "prompts" / "monitor.md"
 
 
-@dataclass
-class AgentState:
-    """
-    Mutable snapshot of everything the agent needs to carry between iterations.
- 
-    Attributes:
-        iteration:      Running count of how many times run_once() has been called.
-        last_status:    The raw PR-status payload returned by the most recent get_pr_status tool call, or None before the first observation.
-        last_comments:  The raw comments payload returned by the most recent get_pr_comments tool call, or None before the first observation.
-        history:        Ordered list of IterationResult dicts recorded by _record(), mirroring what is also written to logs/agent-history.jsonl.
-    """
-    iteration: int = 0
-    last_status: dict[str, Any] | None = None
-    last_comments: dict[str, Any] | None = None
-    history: list[dict[str, Any]] = field(default_factory=list)
-
-
-@dataclass
-class IterationResult:
-    """
-    Structured summary produced at the end of each run_once() call.
- 
-    Attributes:
-        status:          High-level outcome label. Either "merge-ready", "in-progress", or "blocked".
-        merge_ready:     True when the PR is ready to be merged after this iteration.
-        blocked_reasons: List of blocking reason strings taken directly from the
-                         PR-status payload (e.g. "ci_failing", "review_required").
-        actions:         Human-readable log of every tool call or LLM action taken
-                         during this iteration.
-        human_needed:    True when the agent has determined it cannot unblock the PR
-                         on its own and a human must intervene.
-        message:         Short prose summary suitable for displaying in the terminal UI.
-    """
-    status: str
-    merge_ready: bool
-    blocked_reasons: list[str]
-    actions: list[str]
-    human_needed: bool
-    message: str
-
-
 def _interval_to_seconds(raw: str) -> int:
     """
     Converts a human-readable interval string into a number of seconds.
+    All other strings fall back to 300 seconds (5 minutes).
  
     Recognised unit suffixes:
         s: seconds
         m: minutes
         h: hours
         d: days
-    
-    All other strings fall back to 300 seconds (5 minutes).
  
     Args:
         raw: The interval string read from the loop config (e.g. "10m").
@@ -123,6 +80,44 @@ def _status_fingerprint(status: dict[str, Any] | None) -> str:
             str(status.get("review_decision")),
         ]
     )
+
+
+@dataclass
+class AgentState:
+    """
+    Mutable snapshot of everything the agent needs to carry between iterations.
+ 
+    Attributes:
+        iteration: Running count of how many times run_once() has been called.
+        last_status: The raw PR-status payload returned by the most recent get_pr_status tool call, or None before the first observation.
+        last_comments: The raw comments payload returned by the most recent get_pr_comments tool call, or None before the first observation.
+        history: Ordered list of IterationResult dicts recorded by _record(), mirroring what is also written to logs/agent-history.jsonl.
+    """
+    iteration: int = 0
+    last_status: dict[str, Any] | None = None
+    last_comments: dict[str, Any] | None = None
+    history: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class IterationResult:
+    """
+    Structured summary produced at the end of each run_once() call.
+ 
+    Attributes:
+        status: High-level outcome label. Either "merge-ready", "in-progress", or "blocked".
+        merge_ready: True when the PR is ready to be merged after this iteration.
+        blocked_reasons: List of blocking reason strings taken directly from the payload (e.g. "ci_failing", "review_required").
+        actions: Human-readable log of every tool call or LLM action taken during this iteration.
+        human_needed: True when the agent has determined it cannot unblock the PR on its own and a human must intervene.
+        message: Short prose summary suitable for displaying in the terminal UI.
+    """
+    status: str
+    merge_ready: bool
+    blocked_reasons: list[str]
+    actions: list[str]
+    human_needed: bool
+    message: str
 
 
 class Agent:
@@ -304,12 +299,9 @@ class Agent:
  
         Workflow:
             1. Call observe() to get the latest PR state.
-            2. If the PR is already merge-ready, return immediately without
-               invoking the LLM (avoids unnecessary API calls).
-            3. Otherwise run the LLM loop (_run_llm_loop) to attempt to unblock
-               the PR, then observe again to see whether it worked.
-            4. Determine whether human intervention is required based on the
-               blocking reasons that remain after the LLM's actions.
+            2. If the PR is already merge-ready, return immediately without invoking the LLM (avoids unnecessary API calls).
+            3. Otherwise run the LLM loop (_run_llm_loop) to attempt to unblock the PR, then observe again to see whether it worked.
+            4. Determine whether human intervention is required based on the blocking reasons that remain after the LLM's actions.
             5. Record the result to history/logs and return it.
  
         Returns:
@@ -337,20 +329,17 @@ class Agent:
         status, _comments = self.observe()
 
         blocked = status.get("blocked_reasons", [])
-        human_needed = any(
-            reason in blocked
-            for reason in ("merge_conflicts", "changes_requested", "review_required")
-        ) or (
-            "ci_failing" in blocked
-            and not self.config.guardrails.get("allow_unrelated_changes")
-        )
+        human_needed = any(reason in blocked for reason in ("merge_conflicts", "changes_requested", "review_required")) or \
+                ("ci_failing" in blocked and not self.config.guardrails.get("allow_unrelated_changes"))
 
         if status.get("merge_ready"):
             iteration_status = "merge-ready"
             message = "PR became merge-ready after this iteration."
+
         elif human_needed and not actions:
             iteration_status = "blocked"
             message = "Human input required before continuing."
+
         else:
             iteration_status = "in-progress"
             message = "Iteration complete; PR still has open items."
@@ -367,6 +356,23 @@ class Agent:
         return result
 
     def run_loop(self, *, mode: str | None = None, max_iterations: int | None = None) -> None:
+        """
+        Run the agent continuously until a terminal condition is reached.
+ 
+        Terminal conditions (in priority order):
+            - PR becomes merge-ready.
+            - max_iterations is set and has been reached.
+            - The last iteration is "blocked" and human_needed is True.
+ 
+        Sleeping strategy between iterations is governed by `mode`:
+            fixed: sleep for a constant interval (from loop config "interval").
+            dynamic: poll rapidly (loop config "ci_poll_seconds") and only run a full iteration
+                    when the PR-state fingerprint changes, saving API calls during long CI waits.
+ 
+        Args:
+            mode: Override the loop mode from config ("fixed" | "dynamic").
+            max_iterations: Hard cap on total iterations, mainly used for testing.
+        """
         loop_cfg = self.config.loop
         mode = mode or loop_cfg.get("mode", "fixed")
         poll_seconds = int(loop_cfg.get("ci_poll_seconds", 30))
@@ -398,6 +404,14 @@ class Agent:
                 time.sleep(interval_seconds)
 
     def _record(self, result: IterationResult) -> None:
+        """
+        Persist an IterationResult to both the in-memory history and the JSONL log.
+        Appends a dict representation of the result to self.state.history and writes it as a
+        newline-terminated JSON object to logs/agent-history.jsonl, creating the logs directory if needed.
+ 
+        Args:
+            result: The IterationResult to record, produced by run_once().
+        """
         entry = {
             "iteration": self.state.iteration,
             "status": result.status,
@@ -410,17 +424,28 @@ class Agent:
         self.state.history.append(entry)
         ensure_logs_dir()
         log_path = ROOT_DIR / "logs" / "agent-history.jsonl"
+
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(entry) + "\n")
 
     def _print_result(self, result: IterationResult) -> None:
+        """
+        Print a formatted summary of an IterationResult to stdout.
+        This is intended for the terminal UI and to provide general operator visibility.
+        Each call prints a blank line first to visually separate successive iterations.
+ 
+        Args:
+            result: The IterationResult to display, produced by run_once().
+        """
         print()
         print(f"Status: {result.status}")
         print(f"Merge ready: {result.merge_ready}")
         print(f"Blocked: {', '.join(result.blocked_reasons) or 'none'}")
         print(f"Human needed: {'yes' if result.human_needed else 'no'}")
         print(f"Message: {result.message}")
+
         if result.actions:
             print("Actions:")
+
             for action in result.actions:
                 print(f"  - {action}")
