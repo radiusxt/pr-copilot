@@ -1,25 +1,23 @@
-# Copy to config/active.yaml and edit for your PR.
-# cp config/example.yaml config/active.yaml
+# Rename to config/active.yaml and make changes for your PR.
 
-repo: owner/repo          # GitHub org/user and repository name
-pr: 0                     # Pull request number to monitor
-base_branch: main         # Branch the PR targets
+# Make changes here.
+repo: owner/repo    # GitHub org/user and repository name
+pr: 0               # Pull request number to monitor
+base_branch: main   # Branch the PR targets
 
+# Limits what the agent is allowed to change autonomously.
 guardrails:
-  # Limits what the agent is allowed to change autonomously.
-  max_files_per_fix: 5
-  allow_ci_workflow_changes: false   # Never edit .github/workflows to "make green"
-  allow_unrelated_changes: false     # Fixes must stay in PR scope
-  auto_push: false                   # Require explicit approval before git push
-  auto_merge: false                  # Never merge without human sign-off
+  max_files_per_fix: 10
+  allow_ci_workflow_changes: false  # Never edit .github/workflows to "make green"
+  allow_unrelated_changes: false    # Fixes must stay in PR scope
+  auto_push: false                  # Require explicit approval before git push
+  auto_merge: false                 # Require explicit approval before git merges
 
 loop:
-  # Used by scripts/run-loop.sh and scripts/pr-watch.sh
-  mode: dynamic           # dynamic | fixed
-  interval: 5m            # Fallback heartbeat for dynamic mode; cadence for fixed
-  ci_poll_seconds: 30     # How often pr-watch.sh checks for CI changes
+  mode: dynamic         # dynamic | fixed
+  interval: 5m          # Fallback heartbeat for dynamic mode; cadence for fixed
+  ci_poll_seconds: 30   # How often the agent polls for CI state changes in dynamic mode
 
 notifications:
-  # Future: wire to Slack, email, etc.
-  on_blocked: true        # Escalate when human judgment is required
-  on_merge_ready: true    # Notify when PR becomes merge-ready
+  on_blocked: true      # Escalate when human judgment is required
+  on_merge_ready: true  # Notify when PR becomes merge-ready

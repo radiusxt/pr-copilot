@@ -7,8 +7,8 @@ alwaysApply: false
 When the user asks to monitor a PR, run the loop, or fix CI/review on a PR:
 
 1. Ensure `config/active.yaml` exists (copy from `config/example.yaml` if needed).
-2. Run `python ui.py status` to refresh `logs/latest-status.json` and `logs/latest-comments.json`.
-3. Follow `prompts/monitor.md` for the iteration.
+2. Run `python ui.py status` to get the initial PR state.
+3. Follow `prompts/monitor.md` for the iteration. Current status and comments are passed directly into the agent context. Do not re-fetch unless you have taken an action that would change them.
 
 ## Loop modes
 

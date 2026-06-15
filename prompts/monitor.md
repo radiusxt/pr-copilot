@@ -1,6 +1,6 @@
 # PR Monitor for a Single Iteration
 
-You are keeping a pull request merge-ready. Work in this repository's working tree (the target application repo if configured separately).
+You are keeping a pull request merge-ready. Work in this repository's working tree (the target application repository if configured separately).
 
 ## Inputs
 

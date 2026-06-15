@@ -1,16 +1,17 @@
 # Optional CI entry point: posts a merge-readiness snapshot on PR events.
-# Copy or adapt this into the target application repo to learn GitHub Actions.
+# Copy or adapt this into the target application repo's .github/workflows/.
+# Requires ANTHROPIC_API_KEY to be set as a repository secret if LLM features are enabled; for status-only reporting it is not needed.
 name: PR status report
 
 on:
   pull_request:
+    # Runs on all meaningful PR lifecycle events. "synchronize" covers new
+    # commits pushed to the branch, which is when CI state is most likely to have changed.
     types: [opened, synchronize, reopened, ready_for_review]
-  check_suite:
-    types: [completed]
 
 permissions:
-  pull-requests: write
-  contents: read
+  pull-requests: write   # Required to post and edit PR comments
+  contents: read         # Required to checkout the repository
 
 jobs:
   report:
@@ -27,21 +28,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Install GitHub CLI
-        run: |
-          type -p curl >/dev/null || sudo apt install curl -y
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-          sudo apt update
-          sudo apt install gh -y
-
       - name: Write active config from workflow context
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number || github.event.check_suite.pull_requests[0].number }}
+        # Builds config/active.yaml from GitHub Actions context variables so the agent
+        # knows which repo and PR to inspect without a manually maintained config file in CI.
+        # Guardrails are intentionally locked down for CI: no auto-push or auto-merge, and workflow file edits are blocked.
         run: |
           cat > config/active.yaml <<EOF
           repo: ${{ github.repository }}
-          pr: ${PR_NUMBER}
+          pr: ${{ github.event.pull_request.number }}
           base_branch: ${{ github.event.pull_request.base.ref || 'main' }}
           guardrails:
             max_files_per_fix: 5
@@ -59,27 +53,47 @@ jobs:
           EOF
 
       - name: Collect PR status
+        # Runs ui.py in observation-only mode (no LLM calls) to populate logs/latest-status.json and logs/latest-comments.json.
         env:
           GH_TOKEN: ${{ github.token }}
         run: python ui.py status
 
       - name: Comment merge-readiness summary
+        # Parses the status snapshot written by the previous step and posts a summary table as a PR comment.
+        # Uses --edit-last so repeated triggers update the existing comment rather than spamming new ones.
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number || github.event.check_suite.pull_requests[0].number }}
         run: |
-          READY=$(python3 -c "import json; print('yes' if json.load(open('logs/latest-status.json'))['merge_ready'] else 'no')")
-          BLOCKED=$(python3 -c "import json; print(', '.join(json.load(open('logs/latest-status.json'))['blocked_reasons']) or 'none')")
-          FAILING=$(python3 -c "import json; d=json.load(open('logs/latest-status.json')); print(len(d['ci']['failing']))")
-          gh pr comment "$PR_NUMBER" --body "$(cat <<EOF
-          ## PR monitor status
+          python3 - <<'EOF'
+          import json, subprocess, sys
+
+          with open("logs/latest-status.json") as f:
+              d = json.load(f)
+
+          ready    = "yes" if d["merge_ready"] else "no"
+          blocked  = ", ".join(d["blocked_reasons"]) or "none"
+          failing  = len(d["ci"]["failing"])
+          pr       = d["pr"]
+
+          body = f"""## PR monitor status
 
           | Field | Value |
           |---|---|
-          | Merge ready | **${READY}** |
-          | Blocked reasons | ${BLOCKED} |
-          | Failing checks | ${FAILING} |
+          | Merge ready | **{ready}** |
+          | Blocked reasons | {blocked} |
+          | Failing checks | {failing} |
 
           _Automated snapshot from agentic-loop. Agent fixes still run locally or via Cursor._
+          """
+
+          result = subprocess.run(
+              ["gh", "pr", "comment", str(pr), "--edit-last", "--body", body],
+              capture_output=True, text=True
+          )
+          # --edit-last fails if no prior comment exists; fall back to creating one
+          if result.returncode != 0:
+              subprocess.run(
+                  ["gh", "pr", "comment", str(pr), "--body", body],
+                  check=True
+              )
           EOF
-          )"
