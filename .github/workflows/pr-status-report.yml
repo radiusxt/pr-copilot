@@ -1,13 +1,17 @@
 # Optional CI entry point: posts a merge-readiness snapshot on PR events.
 # Copy or adapt this into the target application repo's .github/workflows/.
 # Requires ANTHROPIC_API_KEY to be set as a repository secret if LLM features are enabled; for status-only reporting it is not needed.
-name: PR status report
+name: PR Status Report
 
 on:
   pull_request:
     # Runs on all meaningful PR lifecycle events. "synchronize" covers new
     # commits pushed to the branch, which is when CI state is most likely to have changed.
     types: [opened, synchronize, reopened, ready_for_review]
+  workflow_run:
+    # Triggers after any workflow completes
+    workflows: ["*"]
+    types: [completed]
 
 permissions:
   pull-requests: write   # Required to post and edit PR comments
@@ -27,18 +31,60 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+      
+      # Resolve the PR number depending on which event triggered this workflow.
+      # pull_request events always carry the PR number directly in context.
+      # workflow_run events do not — we look it up from the head branch name.
+      - name: Resolve PR number
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            PR=$(gh pr list \
+              --head "${{ github.event.workflow_run.head_branch }}" \
+              --repo "${{ github.repository }}" \
+              --json number \
+              --jq '.[0].number')
+            echo "PR_NUMBER=$PR" >> $GITHUB_ENV
+          else
+            echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+          fi
 
+      # Skip the rest of the job if no PR was found (e.g. workflow_run fired
+      # on a push to main rather than a PR branch).
+      - name: Check PR number resolved
+        id: check_pr
+        run: |
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No PR found for this event — skipping remaining steps."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      
+      - name: Resolve base branch
+        if: steps.check_pr.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BASE=$(gh pr view "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --json baseRefName \
+            --jq '.baseRefName')
+          echo "BASE_BRANCH=$BASE" >> $GITHUB_ENV
+
+      # Builds config/active.yaml from GitHub Actions context variables so the agent
+      # knows which repo and PR to inspect without a manually maintained config file in CI.
+      # Guardrails are intentionally locked down for CI: no auto-push or auto-merge, and workflow file edits are blocked.
       - name: Write active config from workflow context
-        # Builds config/active.yaml from GitHub Actions context variables so the agent
-        # knows which repo and PR to inspect without a manually maintained config file in CI.
-        # Guardrails are intentionally locked down for CI: no auto-push or auto-merge, and workflow file edits are blocked.
+        if: steps.check_pr.outputs.skip != 'true'
         run: |
           cat > config/active.yaml <<EOF
           repo: ${{ github.repository }}
-          pr: ${{ github.event.pull_request.number }}
-          base_branch: ${{ github.event.pull_request.base.ref || 'main' }}
+          pr: ${PR_NUMBER}
+          base_branch: ${BASE_BRANCH}
           guardrails:
-            max_files_per_fix: 5
+            max_files_per_fix: 10
             allow_ci_workflow_changes: false
             allow_unrelated_changes: false
             auto_push: false
@@ -52,15 +98,17 @@ jobs:
             on_merge_ready: true
           EOF
 
+      # Runs ui.py in observation-only mode (no LLM calls) to populate logs/latest-status.json and logs/latest-comments.json.
       - name: Collect PR status
-        # Runs ui.py in observation-only mode (no LLM calls) to populate logs/latest-status.json and logs/latest-comments.json.
+        if: steps.check_pr.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: python ui.py status
 
+      # Parses the status snapshot written by the previous step and posts a summary table as a PR comment.
+      # Uses --edit-last so repeated triggers update the existing comment rather than spamming new ones.
       - name: Comment merge-readiness summary
-        # Parses the status snapshot written by the previous step and posts a summary table as a PR comment.
-        # Uses --edit-last so repeated triggers update the existing comment rather than spamming new ones.
+        if: steps.check_pr.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -86,6 +134,7 @@ jobs:
           _Automated snapshot from agentic-loop. Agent fixes still run locally or via Cursor._
           """
 
+          # Attempt to update the existing comment; fall back to creating one if this is the first time the workflow has run on this PR.
           result = subprocess.run(
               ["gh", "pr", "comment", str(pr), "--edit-last", "--body", body],
               capture_output=True, text=True

@@ -38,7 +38,7 @@ export ANTHROPIC_API_KEY=...
 
 OR
 
-Create a .env file with ANTHROPIC_API_KEY=...
+echo "ANTHROPIC_API_KEY=..." >> .env
 ```
 
 ### 4. Running the Agent
@@ -71,20 +71,6 @@ python3 ui.py repl
 
 Commands: `status`, `once`, `loop fixed`, `loop dynamic`, `quit`
 
-## Architecture Diagram
-
-```mermaid
-flowchart LR
-  UI[ui.py] --> Agent[agent.py]
-  Agent --> Tools[tools.py]
-  Tools --> Clients[clients.py]
-  Clients --> GH[(GitHub via gh)]
-  Clients --> LLM[(Anthropic API)]
-  Clients --> Docker[(Docker daemon)]
-  Agent --> Logs[(logs/*.json)]
-  Tools --> Repo[(Target repo)]
-```
-
 ## Guardrails
 
 When CI fails for reasons outside the PR's diff, the agent stops and reports it. Merging the latest `base_branch` first is often the fix or another PR may have already resolved the issue on main.
@@ -93,19 +79,8 @@ The agent will not, by default:
 
 - Edit `.github/workflows` to force failing checks to pass
 - Make changes outside the PR's diff scope
-- `git push` without `auto_push: true` in config or explicit user approval that allows it to
+- `git push` without `auto_push: true` in config or explicit user approval that allows it to.
 - Merge the PR into `main` or a branch without `auto_merge: true` in config
-
-## Modules
-
-| File         | Role                                                                         |
-| -------------| ---------------------------------------------------------------------------- |
-| `agent.py`   | `Agent` class — state, observe → reason → act loop, fixed/dynamic scheduling |
-| `clients.py` | `GitHubClient`, `AnthropicClient`, `DockerClient`, `MonitorConfig` loader    |
-| `tools.py`   | `Tool` base class + PR status, comments, shell, file write, docker exec      |
-| `ui.py`      | CLI: `status`, `once`, `loop`, `repl`                                        |
-
----
 
 ### `config/example.yaml`
 
@@ -123,23 +98,29 @@ Cursor rule that wires the repo together: when to run the monitor, which prompt 
 
 **Achieves:** Persistent context so you don't re-explain the workflow every chat.
 
-### `logs/`
-
-Runtime artifacts (`latest-status.json`, `latest-comments.json`, `last-run.log`).
-
 ### `.github/workflows/pr-status-report.yml`
 
 Optional GitHub Action: on PR/check events, runs `python ui.py status` and comments a merge-readiness table on the PR.
 
 **Achieves:** CI/CD learning path — observability in GitHub without giving the Action permission to push code fixes.
 
----
-
 ## Suggested iteration path (CI/CD skills)
 
 | Phase        | What to add                                                        |
 | ------------ | ------------------------------------------------------------------ |
-| **Now**      | Local loop + manual agent fixes                                    |
-| **Next**     | Copy GHA workflow into target repo; comment on every CI completion |
-| **Then**     | `auto_push: true` with branch protection + required checks         |
-| **Later**    | Cursor SDK or GitHub App for autonomous fix PRs                    |
+| **Next**     | `auto_push: true` with branch protection + required checks         |
+| **Next**     | Cursor SDK or GitHub App for autonomous fix PRs                    |
+
+## Architecture Diagram (for case study as reference)
+
+```mermaid
+flowchart LR
+  UI[ui.py] --> Agent[agent.py]
+  Agent --> Tools[tools.py]
+  Tools --> Clients[clients.py]
+  Clients --> GH[(GitHub via gh)]
+  Clients --> LLM[(Anthropic API)]
+  Clients --> Docker[(Docker daemon)]
+  Agent --> Logs[(logs/*.json)]
+  Tools --> Repo[(Target repo)]
+```

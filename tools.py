@@ -230,8 +230,13 @@ class PRStatusTool(Tool):
                     for c in failing
                 ],
                 "pending": [{"name": c.get("name"), "status": c.get("status")} for c in pending],
+                # all_green requires at least one check to exist; a PR with no checks is not considered "all green"
+                # to avoid false positives on repositories that have not configured any CI.
                 "all_green": len(checks) > 0 and not failing and not pending,
             },
+            # merge_ready is True only when every condition is simultaneously satisfied:
+            # PR is open, GitHub reports it as mergeable, no merge conflicts (CLEAN),
+            # reviews are approved or not required and all CI checks have passed (or none exist).
             "merge_ready": (
                 data.get("state") == "OPEN"
                 and data.get("mergeable") == "MERGEABLE"
@@ -361,6 +366,12 @@ class ShellCommandTool(Tool):
             return ToolResult(
                 ok=False,
                 output="git push blocked by guardrails (auto_push: false). Ask the human to approve.",
+            )
+
+        if ("gh pr merge" in command or "git merge" in command) and not self.config.guardrails.get("auto_merge"):
+            return ToolResult(
+                ok=False,
+                output="Merge commands are blocked by guardrails (auto_merge: false). Ask the human to approve and merge manually.",
             )
 
         if ".github/workflows" in command and not self.config.guardrails.get("allow_ci_workflow_changes"):

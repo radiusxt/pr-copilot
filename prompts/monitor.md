@@ -14,7 +14,7 @@ Use `get_pr_status` and `get_pr_comments` to refresh after making changes.
 ## Priority order
 
 1. **Merge conflicts / branch behind base**: merge or rebase `base_branch` into the PR branch. If intents conflict, stop and ask the human.
-2. **CI failures in PR scope**: fix failing tests, lint, or type errors caused by this PR's changes. Do not edit `.github/workflows` or unrelated code to force green.
+2. **CI failures in PR scope**: fix failing tests, lint, or type errors caused by this PR's changes. Do not edit `.github/workflows` or unrelated code to force green/passing checks.
 3. **Review comments**: address valid unresolved threads. Skip resolved threads. Disagree politely when a comment is wrong.
 
 ## Guardrails (from config)
