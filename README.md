@@ -1,6 +1,6 @@
-# Agentic PR
+# PR Copilot
 
-A minimal, iterable system for keeping a pull request merge-ready: green CI, resolved review threads and no merge conflicts for delivering better software faster. 
+A minimal, iterable internal tool for keeping a pull request merge-ready: green CI, resolved review threads and no merge conflicts for delivering better software faster. 
 
 `agent.py` orchestrates the loop, `tools.py` defines agent capabilities, `clients.py` talks to GitHub, Anthropic and/or Docker and `ui.py` wraps the tool around a CLI.
 
